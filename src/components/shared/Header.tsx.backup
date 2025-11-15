@@ -1,0 +1,382 @@
+'use client'
+
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Bell, Search, Settings, User, Menu, X, Calendar, Users, Scissors, Clock, MapPin, Phone, Command } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { useAuth } from '@/hooks/auth'
+import { useRouter } from 'next/navigation'
+import { useSearch, GlobalSearchResult } from '@/hooks/useSearch'
+import { useDebounce } from '@/hooks/useDebounce'
+import CommandSearch from './CommandSearch'
+
+interface HeaderProps {
+    onMenuToggle?: () => void
+    isMobileMenuOpen?: boolean
+}
+
+
+const Header: React.FC<HeaderProps> = ({ onMenuToggle, isMobileMenuOpen = false }) => {
+    const { user, logout } = useAuth()
+    const router = useRouter()
+    const [isCommandSearchOpen, setIsCommandSearchOpen] = useState(false)
+
+    // Command+K shortcut
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault()
+                setIsCommandSearchOpen(true)
+            }
+        }
+
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
+
+    // Perform search when debounced term changes
+    useEffect(() => {
+        if (debouncedSearchTerm.trim()) {
+            globalSearch(debouncedSearchTerm, 12)
+                .then(results => {
+                    setSearchResults(results)
+                    setShowResults(true)
+                })
+                .catch(error => {
+                    console.error('Search error:', error)
+                    setSearchResults([])
+                    setShowResults(true)
+                })
+        } else {
+            setSearchResults([])
+            setShowResults(false)
+        }
+    }, [debouncedSearchTerm])
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setShowResults(false)
+                setIsSearchFocused(false)
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (searchTerm.trim()) {
+            console.log('Searching for:', searchTerm)
+        }
+    }
+
+    const handleResultClick = (result: GlobalSearchResult) => {
+        setShowResults(false)
+        setSearchTerm('')
+
+        switch (result.type) {
+            case 'appointment':
+                router.push(`/appointments/${result.id}`)
+                break
+            case 'client':
+                router.push(`/clients/${result.id}`)
+                break
+            case 'service':
+                router.push(`/services/${result.id}`)
+                break
+        }
+    }
+
+    const getResultIcon = (type: string) => {
+        switch (type) {
+            case 'appointment':
+                return <Calendar className="h-4 w-4 text-blue-500" />
+            case 'client':
+                return <Users className="h-4 w-4 text-green-500" />
+            case 'service':
+                return <Scissors className="h-4 w-4 text-purple-500" />
+            default:
+                return <Search className="h-4 w-4 text-gray-400" />
+        }
+    }
+
+    const getStatusBadge = (status?: string) => {
+        if (!status) return null
+
+        const statusColors = {
+            confirmed: 'bg-green-100 text-green-800',
+            pending: 'bg-yellow-100 text-yellow-800',
+            cancelled: 'bg-red-100 text-red-800',
+            completed: 'bg-blue-100 text-blue-800'
+        }
+
+        return (
+            <Badge className={`text-xs ${statusColors[status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'}`}>
+                {status}
+            </Badge>
+        )
+    }
+
+    return (
+        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+            <div className="flex items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+                <div className="flex items-center space-x-4">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onMenuToggle}
+                        className="lg:hidden"
+                    >
+                        {isMobileMenuOpen ? (
+                            <X className="h-6 w-6" />
+                        ) : (
+                            <Menu className="h-6 w-6" />
+                        )}
+                    </Button>
+                </div>
+
+                {/* Command+K Search Button */}
+                <div className="flex-1 max-w-lg mx-4 hidden md:block">
+                    <button
+                        onClick={() => setIsCommandSearchOpen(true)}
+                        className="w-full flex items-center gap-3 px-4 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors group"
+                    >
+                        <Search className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
+                        <span className="flex-1 text-left text-sm text-gray-500 group-hover:text-gray-700">
+                            Search appointments, services, clients...
+                        </span>
+                        <div className="flex items-center gap-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-500">
+                            <Command className="h-3 w-3" />
+                            <span>K</span>
+                        </div>
+                    </button>
+                </div>
+
+                {/* Command Search Modal */}
+                <CommandSearch 
+                    isOpen={isCommandSearchOpen} 
+                    onClose={() => setIsCommandSearchOpen(false)} 
+                />
+
+                {false && (
+                            <Card className="absolute top-full left-0 right-0 mt-2 z-50 shadow-lg border-0 bg-white">
+                                <CardContent className="p-0 max-h-96 overflow-y-auto">
+                                    {loading && (
+                                        <div className="px-4 py-8 text-center">
+                                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-600 mx-auto mb-2"></div>
+                                            <p className="text-sm text-gray-600">Searching...</p>
+                                        </div>
+                                    )}
+                                    {!loading && searchResults.length > 0 ? (
+                                        <>
+                                            {['appointment', 'client', 'service'].map(type => {
+                                                const typeResults = searchResults.filter(r => r.type === type)
+                                                if (typeResults.length === 0) return null
+
+                                                return (
+                                                    <div key={type} className="border-b border-gray-100 last:border-b-0">
+                                                        <div className="px-4 py-2 bg-gray-50 text-sm font-medium text-gray-700 capitalize">
+                                                            {type}s ({typeResults.length})
+                                                        </div>
+                                                        {typeResults.map((result) => (
+                                                            <div
+                                                                key={result.id}
+                                                                onClick={() => handleResultClick(result)}
+                                                                className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-b-0 transition-colors"
+                                                            >
+                                                                <div className="flex items-start space-x-3">
+                                                                    <div className="flex-shrink-0 mt-1">
+                                                                        {getResultIcon(result.type)}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                                                                {result.title}
+                                                                            </p>
+                                                                            <div className="flex items-center space-x-2">
+                                                                                {result.price && (
+                                                                                    <span className="text-sm font-medium text-green-600">
+                                                                                        {result.price}
+                                                                                    </span>
+                                                                                )}
+                                                                                {getStatusBadge(result.status)}
+                                                                            </div>
+                                                                        </div>
+                                                                        <p className="text-sm text-gray-600 truncate">
+                                                                            {result.subtitle}
+                                                                        </p>
+                                                                        {result.description && (
+                                                                            <div className="flex items-center space-x-4 mt-1">
+                                                                                <span className="text-xs text-gray-500 flex items-center">
+                                                                                    <Clock className="h-3 w-3 mr-1" />
+                                                                                    {result.description}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                        {result.phone && (
+                                                                            <div className="flex items-center space-x-4 mt-1">
+                                                                                <span className="text-xs text-gray-500 flex items-center">
+                                                                                    <Phone className="h-3 w-3 mr-1" />
+                                                                                    {result.phone}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                        {result.category && (
+                                                                            <div className="mt-1">
+                                                                                <Badge variant="secondary" className="text-xs">
+                                                                                    {result.category}
+                                                                                </Badge>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )
+                                            })}
+
+                                            <div className="px-4 py-3 bg-gray-50 border-t">
+                                                <button
+                                                    onClick={() => {
+                                                        handleSearch(new Event('submit') as any)
+                                                        setShowResults(false)
+                                                    }}
+                                                    className="text-sm text-pink-600 hover:text-pink-700 font-medium flex items-center"
+                                                >
+                                                    <Search className="h-4 w-4 mr-2" />
+                                                    View all results for "{searchTerm}"
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="px-4 py-8 text-center">
+                                            <Search className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                            <p className="text-sm text-gray-600">No results found for "{debouncedSearchTerm}"</p>
+                                            <p className="text-xs text-gray-500 mt-1">Try searching for appointments, clients, or services</p>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                    {/* Mobile Search Button */}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="md:hidden"
+                        onClick={() => {
+                            // TODO: Implement mobile search modal
+                            console.log('Open mobile search modal')
+                        }}
+                    >
+                        <Search className="h-5 w-5" />
+                    </Button>
+
+                    {/* Notifications */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="relative">
+                                <Bell className="h-5 w-5" />
+                                <Badge
+                                    variant="destructive"
+                                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs"
+                                >
+                                    3
+                                </Badge>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-80">
+                            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="flex flex-col items-start p-3">
+                                <div className="font-medium">New appointment request</div>
+                                <div className="text-sm text-gray-500">Sarah Johnson requested a haircut for tomorrow at 2 PM</div>
+                                <div className="text-xs text-gray-400 mt-1">5 minutes ago</div>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="flex flex-col items-start p-3">
+                                <div className="font-medium">Payment received</div>
+                                <div className="text-sm text-gray-500">$85 payment confirmed for Maria Garcia</div>
+                                <div className="text-xs text-gray-400 mt-1">1 hour ago</div>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="flex flex-col items-start p-3">
+                                <div className="font-medium">Staff schedule updated</div>
+                                <div className="text-sm text-gray-500">Emma Thompson updated her availability</div>
+                                <div className="text-xs text-gray-400 mt-1">2 hours ago</div>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-center text-indigo-600 font-medium">
+                                View all notifications
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Settings */}
+                    <Button variant="ghost" size="sm">
+                        <Settings className="h-5 w-5" />
+                    </Button>
+
+                    {/* User Menu */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="flex items-center space-x-2 px-3">
+                                <div className="h-8 w-8 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center">
+                                    <User className="h-4 w-4 text-white" />
+                                </div>
+                                <div className="hidden sm:block text-left">
+                                    <div className="text-sm font-medium text-gray-900">{user?.name}</div>
+                                    <div className="text-xs text-gray-500">{user?.roles?.[0] || 'User'}</div>
+                                </div>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>
+                                <div>
+                                    <div className="font-medium">{user?.name}</div>
+                                    <div className="text-sm text-gray-500">{user?.email}</div>
+                                </div>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem>
+                                <User className="mr-2 h-4 w-4" />
+                                Profile Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                                <Settings className="mr-2 h-4 w-4" />
+                                Account Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                                <Bell className="mr-2 h-4 w-4" />
+                                Notification Preferences
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={logout}
+                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                            >
+                                Sign out
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            </div>
+        </header>
+    )
+}
+
+export default Header
